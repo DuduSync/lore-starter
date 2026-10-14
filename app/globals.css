@@ -72,6 +72,16 @@ a:hover {
   color: transparent;
 }
 
+.card-top {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.small-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
 .field {
   display: block;
   margin: 16px 0;

@@ -9,26 +9,27 @@ import {
   fetchModel,
   streamChat,
 } from "@/lib/loreapi";
+import { Lang, Strings, detectLang, getStrings } from "@/lib/i18n";
 
 const KEY_STORAGE = "lorestarter.key";
 const CHAT_STORAGE = "lorestarter.chat";
 const SYSTEM_STORAGE = "lorestarter.system";
+const LANG_STORAGE = "lorestarter.lang";
 
-const DEFAULT_SYSTEM =
-  "You are a creative roleplay assistant. Stay in character, be descriptive and keep the story moving.";
+const DEFAULT_SYSTEMS: Record<Lang, string> = {
+  en: "You are a creative roleplay assistant. Stay in character, be descriptive and keep the story moving.",
+  pt: "Você é um assistente criativo de roleplay. Mantenha o personagem, seja descritivo e mantenha a história andando.",
+};
 
-function friendlyError(err: unknown): string {
+function friendlyError(err: unknown, t: Strings): string {
   if (err instanceof LoreApiError) {
-    if (err.status === 401 || err.status === 403)
-      return "Invalid API key. Double check it and try again.";
-    if (err.status === 402)
-      return "Not enough credits. Top up your account at loreapi.online.";
-    if (err.status === 429)
-      return "Weekly credit limit reached. Your credits renew Sunday at 00:00 (BRT).";
-    return `LoreAPI error (${err.status}): ${err.message}`;
+    if (err.status === 401 || err.status === 403) return t.invalidKey;
+    if (err.status === 402) return t.noCredits;
+    if (err.status === 429) return t.weeklyLimit;
+    return `${t.apiError} (${err.status}): ${err.message}`;
   }
   if (err instanceof Error && err.name === "AbortError") return "";
-  return "Connection failed. Check your internet and try again.";
+  return t.connectionFailed;
 }
 
 function MessageText({ text }: { text: string }) {
@@ -48,13 +49,14 @@ function MessageText({ text }: { text: string }) {
 
 export default function ChatApp() {
   const [booted, setBooted] = useState(false);
+  const [lang, setLang] = useState<Lang>("en");
   const [key, setKey] = useState("");
   const [keyInput, setKeyInput] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [model, setModel] = useState("loreapi-rp");
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [system, setSystem] = useState(DEFAULT_SYSTEM);
+  const [system, setSystem] = useState(DEFAULT_SYSTEMS.en);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [streaming, setStreaming] = useState(false);
@@ -62,6 +64,13 @@ export default function ChatApp() {
   const [showSystem, setShowSystem] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const langRef = useRef<Lang>("en");
+
+  const t = getStrings(lang);
+
+  useEffect(() => {
+    langRef.current = lang;
+  }, [lang]);
 
   async function connect(candidate: string, persist = true) {
     const trimmed = candidate.trim();
@@ -78,7 +87,7 @@ export default function ChatApp() {
       setAccount(acc);
       setModel(mdl);
     } catch (err) {
-      setError(friendlyError(err));
+      setError(friendlyError(err, getStrings(langRef.current)));
     } finally {
       setBusy(false);
     }
@@ -88,7 +97,15 @@ export default function ChatApp() {
     const storedKey = localStorage.getItem(KEY_STORAGE) ?? "";
     const storedChat = localStorage.getItem(CHAT_STORAGE);
     const storedSystem = localStorage.getItem(SYSTEM_STORAGE);
-    if (storedSystem) setSystem(storedSystem);
+    const storedLang = localStorage.getItem(LANG_STORAGE);
+    const initialLang: Lang =
+      storedLang === "en" || storedLang === "pt" ? storedLang : detectLang();
+    setLang(initialLang);
+    if (storedSystem) {
+      setSystem(storedSystem);
+    } else {
+      setSystem(DEFAULT_SYSTEMS[initialLang]);
+    }
     if (storedChat) {
       try {
         setMessages(JSON.parse(storedChat));
@@ -115,8 +132,20 @@ export default function ChatApp() {
   }, [system, booted]);
 
   useEffect(() => {
+    if (booted) localStorage.setItem(LANG_STORAGE, lang);
+  }, [lang, booted]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "nearest" });
   }, [messages, streaming]);
+
+  function toggleLang() {
+    const next: Lang = lang === "en" ? "pt" : "en";
+    setLang(next);
+    if (Object.values(DEFAULT_SYSTEMS).includes(system)) {
+      setSystem(DEFAULT_SYSTEMS[next]);
+    }
+  }
 
   function disconnect() {
     abortRef.current?.abort();
@@ -175,7 +204,7 @@ export default function ChatApp() {
       }
       void refreshAccount();
     } catch (err) {
-      const msg = friendlyError(err);
+      const msg = friendlyError(err, getStrings(langRef.current));
       if (msg) setError(msg);
       setMessages((prev) => {
         const last = prev[prev.length - 1];
@@ -190,10 +219,21 @@ export default function ChatApp() {
     }
   }
 
+  const langButton = (
+    <button
+      className="ghost small-btn"
+      onClick={toggleLang}
+      title={t.langTitle}
+      type="button"
+    >
+      {lang === "en" ? "PT-BR" : "EN"}
+    </button>
+  );
+
   if (!booted) {
     return (
       <main className="center">
-        <p className="muted">Loading...</p>
+        <p className="muted">{t.loading}</p>
       </main>
     );
   }
@@ -202,17 +242,18 @@ export default function ChatApp() {
     return (
       <main className="center">
         <div className="setup-card">
+          <div className="card-top">{langButton}</div>
           <h1>LoreAPI Starter</h1>
           <p className="muted">
-            A tiny open-source chat UI for{" "}
+            {t.setupIntroA}
             <a href="https://loreapi.online" target="_blank" rel="noreferrer">
               LoreAPI
             </a>
-            . Paste your API key to start. It stays in this browser.
+            {t.setupIntroB}
           </p>
 
           <label className="field">
-            <span>API key</span>
+            <span>{t.apiKeyLabel}</span>
             <div className="key-row">
               <input
                 type={showKey ? "text" : "password"}
@@ -230,13 +271,13 @@ export default function ChatApp() {
                 className="ghost"
                 onClick={() => setShowKey((v) => !v)}
               >
-                {showKey ? "Hide" : "Show"}
+                {showKey ? t.hide : t.show}
               </button>
             </div>
           </label>
 
           <label className="field">
-            <span>System prompt (optional)</span>
+            <span>{t.systemLabel}</span>
             <textarea
               value={system}
               onChange={(e) => setSystem(e.target.value)}
@@ -251,13 +292,13 @@ export default function ChatApp() {
             onClick={() => void connect(keyInput)}
             disabled={busy || !keyInput.trim()}
           >
-            {busy ? "Connecting..." : "Start chatting"}
+            {busy ? t.connecting : t.start}
           </button>
 
           <p className="muted small">
-            No key yet?{" "}
+            {t.noKey}{" "}
             <a href="https://loreapi.online" target="_blank" rel="noreferrer">
-              Create one at loreapi.online
+              loreapi.online
             </a>
           </p>
         </div>
@@ -281,25 +322,28 @@ export default function ChatApp() {
             className="chip"
             title={
               weekUsage !== undefined
-                ? `Used this week: $${weekUsage.toFixed(4)}`
-                : "Credits left on your LoreAPI account"
+                ? t.usedThisWeek.replace("{v}", weekUsage.toFixed(4))
+                : t.creditsTitle
             }
           >
             {credits !== undefined
-              ? `${Math.round(credits).toLocaleString("en-US")} credits`
+              ? `${Math.round(credits).toLocaleString(
+                  lang === "pt" ? "pt-BR" : "en-US",
+                )} ${t.creditsWord}`
               : "..."}
           </span>
           <span className="pill" title="Model served by your key">
             {modelPill}
           </span>
+          {langButton}
           <button className="ghost" onClick={() => setShowSystem((v) => !v)}>
-            System
+            {t.systemBtn}
           </button>
           <button className="ghost" onClick={newChat}>
-            New chat
+            {t.newChat}
           </button>
           <button className="ghost" onClick={disconnect}>
-            Disconnect
+            {t.disconnect}
           </button>
         </div>
       </header>
@@ -310,7 +354,7 @@ export default function ChatApp() {
             value={system}
             onChange={(e) => setSystem(e.target.value)}
             rows={2}
-            placeholder="System prompt"
+            placeholder={t.systemPlaceholder}
           />
         </div>
       )}
@@ -320,11 +364,8 @@ export default function ChatApp() {
       <section className="messages">
         {messages.length === 0 && (
           <div className="empty">
-            <h2>Start a story</h2>
-            <p className="muted">
-              Try: &ldquo;You wake up in a neon-lit alley of Neo S&atilde;o
-              Paulo. What do you do?&rdquo;
-            </p>
+            <h2>{t.emptyTitle}</h2>
+            <p className="muted">{t.emptyHint}</p>
           </div>
         )}
         {messages.map((m, i) => (
@@ -353,15 +394,12 @@ export default function ChatApp() {
               void send();
             }
           }}
-          placeholder="Write your message..."
+          placeholder={t.composerPlaceholder}
           rows={1}
         />
         {streaming ? (
-          <button
-            className="ghost"
-            onClick={() => abortRef.current?.abort()}
-          >
-            Stop
+          <button className="ghost" onClick={() => abortRef.current?.abort()}>
+            {t.stop}
           </button>
         ) : (
           <button
@@ -369,7 +407,7 @@ export default function ChatApp() {
             onClick={() => void send()}
             disabled={!input.trim()}
           >
-            Send
+            {t.send}
           </button>
         )}
       </footer>

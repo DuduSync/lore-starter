@@ -10,6 +10,7 @@ Paste your own `sk-lore-...` key in the UI and start chatting. The key stays in 
 
 ## Features
 
+- English and Brazilian Portuguese UI with a one-click switch (auto-detects your browser language)
 - Streaming responses (SSE)
 - Bring your own key: connect, see your credits and model, disconnect anytime
 - Editable system prompt
